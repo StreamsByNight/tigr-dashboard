@@ -20,11 +20,11 @@ app.set('trust proxy', 1);
 
 app.use(session({
     secret: 'tigr-secret-key-12345',
-    resave: true,                // Changed to true to ensure session persists
+    resave: true,                
     saveUninitialized: false, 
     cookie: { 
-        secure: true,            // Required for HTTPS (Render)
-        sameSite: 'none',        // Required for cross-site cookies from Canvas
+        secure: true,            
+        sameSite: 'none',        
         maxAge: 1000 * 60 * 60 * 24 // 24 hours
     } 
 }));
@@ -51,10 +51,8 @@ app.get('/api/auth/callback', async (req, res) => {
             code: code
         });
         
-        // Save the token to the session
         req.session.token = response.data.access_token;
         
-        // Manually save the session before redirecting to be safe
         req.session.save((err) => {
             if (err) {
                 console.error("Session Save Error:", err);
@@ -65,11 +63,11 @@ app.get('/api/auth/callback', async (req, res) => {
         });
     } catch (error) {
         console.error("CANVAS TOKEN ERROR:", error.response?.data || error.message);
-        res.status(500).send("Login failed. Check Render logs for details.");
+        res.status(500).send("Login failed.");
     }
 });
 
-// 3. Get Data
+// 3. Get Data (FIXED: Added Profile & Duplicate Filter)
 app.get('/api/assignments', async (req, res) => {
     if (!req.session.token) {
         return res.status(401).json({ error: "Not logged in" });
@@ -77,13 +75,26 @@ app.get('/api/assignments', async (req, res) => {
 
     try {
         const headers = { Authorization: `Bearer ${req.session.token}` };
-        const [courses, planner] = await Promise.all([
-            axios.get(`${CANVAS_URL}/api/v1/courses?include[]=enrollments&per_page=12`, { headers }),
+        
+        // Fetch Profile, Courses, and Planner simultaneously
+        const [profile, coursesResponse, planner] = await Promise.all([
+            axios.get(`${CANVAS_URL}/api/v1/users/self`, { headers }),
+            axios.get(`${CANVAS_URL}/api/v1/courses?include[]=enrollments&per_page=50`, { headers }),
             axios.get(`${CANVAS_URL}/api/v1/planner/items`, { headers })
         ]);
 
+        // DUPLICATE FILTER: Uses a Map to ensure each course ID is only included once
+        const uniqueCourses = Array.from(
+            new Map(
+                coursesResponse.data
+                    .filter(c => c.name) // Only keep courses with names
+                    .map(course => [course.id, course])
+            ).values()
+        );
+
         res.json({
-            courses: courses.data.filter(c => c.name), 
+            user: profile.data.short_name || profile.data.name, // Real name for the greeting
+            courses: uniqueCourses,                             // Cleaned course list
             planner: planner.data
         });
     } catch (error) {
@@ -95,7 +106,7 @@ app.get('/api/assignments', async (req, res) => {
 // 4. Logout
 app.get('/api/auth/logout', (req, res) => {
     req.session.destroy();
-    res.clearCookie('connect.sid'); // Clears the session cookie
+    res.clearCookie('connect.sid'); 
     res.redirect('/');
 });
 
