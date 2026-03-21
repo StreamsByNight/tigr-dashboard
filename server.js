@@ -15,13 +15,17 @@ const REDIRECT_URI = BASE_URL.includes('/api/auth/callback') ? BASE_URL : `${BAS
 
 const PORT = process.env.PORT || 3000;
 
+// CRITICAL FOR RENDER: Tells Express to trust the Render HTTPS proxy
+app.set('trust proxy', 1);
+
 app.use(session({
     secret: 'tigr-secret-key-12345',
-    resave: false,
-    saveUninitialized: true,
+    resave: true,                // Changed to true to ensure session persists
+    saveUninitialized: false, 
     cookie: { 
-        secure: true, // Required for Render/HTTPS
-        sameSite: 'none' // Required for Canvas redirects
+        secure: true,            // Required for HTTPS (Render)
+        sameSite: 'none',        // Required for cross-site cookies from Canvas
+        maxAge: 1000 * 60 * 60 * 24 // 24 hours
     } 
 }));
 
@@ -47,12 +51,19 @@ app.get('/api/auth/callback', async (req, res) => {
             code: code
         });
         
+        // Save the token to the session
         req.session.token = response.data.access_token;
-        // This log helps us see success in Render
-        console.log("Token successfully created for user!"); 
-        res.redirect('/'); 
+        
+        // Manually save the session before redirecting to be safe
+        req.session.save((err) => {
+            if (err) {
+                console.error("Session Save Error:", err);
+                return res.status(500).send("Internal Server Error");
+            }
+            console.log("Token successfully created and session saved!"); 
+            res.redirect('/'); 
+        });
     } catch (error) {
-        // This log is critical for debugging the loop
         console.error("CANVAS TOKEN ERROR:", error.response?.data || error.message);
         res.status(500).send("Login failed. Check Render logs for details.");
     }
@@ -60,7 +71,9 @@ app.get('/api/auth/callback', async (req, res) => {
 
 // 3. Get Data
 app.get('/api/assignments', async (req, res) => {
-    if (!req.session.token) return res.status(401).json({ error: "Not logged in" });
+    if (!req.session.token) {
+        return res.status(401).json({ error: "Not logged in" });
+    }
 
     try {
         const headers = { Authorization: `Bearer ${req.session.token}` };
@@ -74,8 +87,16 @@ app.get('/api/assignments', async (req, res) => {
             planner: planner.data
         });
     } catch (error) {
+        console.error("Data Fetch Error:", error.message);
         res.status(500).json({ error: "Failed to fetch Canvas data" });
     }
+});
+
+// 4. Logout
+app.get('/api/auth/logout', (req, res) => {
+    req.session.destroy();
+    res.clearCookie('connect.sid'); // Clears the session cookie
+    res.redirect('/');
 });
 
 app.listen(PORT, () => console.log(`Dashboard live at ${REDIRECT_URI}`));
