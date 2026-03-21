@@ -31,6 +31,39 @@
 
         const bellSound = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
 
+        async function updateWeather() {
+            try {
+                // 1. Detect City via IP
+                const geoRes = await fetch('https://ipapi.co/json/');
+                const geoData = await geoRes.json();
+                const { city, latitude, longitude } = geoData;
+
+                // 2. Fetch Weather Data
+                const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true&temperature_unit=fahrenheit`);
+                const weatherData = await weatherRes.json();
+                
+                const temp = Math.round(weatherData.current_weather.temperature);
+                const code = weatherData.current_weather.weathercode;
+
+                // 3. Simple Weather Logic
+                let emoji = "☁️";
+                if (code <= 3) emoji = "☀️";
+                else if (code >= 51 && code <= 67) emoji = "🌧️";
+                else if (code >= 71 && code <= 77) emoji = "❄️";
+                else if (code >= 95) emoji = "⛈️";
+
+                document.getElementById('weather-display').innerHTML = `
+                    <div class="flex items-center gap-2 mt-2 bg-white/20 px-4 py-1 rounded-full border border-white/10">
+                        <span class="text-xl">${emoji}</span>
+                        <span class="text-sm font-black uppercase tracking-tighter">${city}: ${temp}°F</span>
+                    </div>
+                `;
+            } catch (e) {
+                console.error("Weather failed:", e);
+                document.getElementById('weather-display').innerHTML = `<span class="text-[10px] opacity-50 uppercase font-bold">Weather Unavailable</span>`;
+            }
+        }
+
         async function fetchCanvasData() {
             try {
                 const response = await fetch('/api/assignments'); 
@@ -218,7 +251,9 @@
             updateProgress();
             renderTodos();
             updateMuteUI();
+            updateWeather(); // Initial Weather Fetch
             setInterval(updateClock, 1000);
+            setInterval(updateWeather, 1800000); // Update weather every 30 mins
             fetchCanvasData();
             setInterval(fetchCanvasData, 300000); 
         };
@@ -269,8 +304,11 @@
 
             <div id="w-clock" class="bg-sky-400 rounded-[2.5rem] p-8 text-white flex flex-col items-center justify-center shadow-lg relative group overflow-hidden transition-all duration-300">
                 <button onclick="removeWidget('w-clock')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-white/40 w-6 h-1.5 rounded-full"></button>
-                <div id="clock" class="text-6xl font-black mb-2 tracking-tighter">00:00</div>
-                <div class="bg-white/20 px-6 py-2 rounded-full border border-white/20 text-lg font-black mt-4 uppercase tracking-tighter">Coco's Gradebook</div>
+                <div id="clock" class="text-6xl font-black mb-1 tracking-tighter">00:00</div>
+                <div class="text-[11px] font-black uppercase tracking-[0.2em] opacity-80 mb-2">Coco's Gradebook</div>
+                <div id="weather-display" class="flex flex-col items-center">
+                    <span class="animate-pulse text-[10px] font-bold uppercase tracking-widest">Finding Weather...</span>
+                </div>
             </div>
 
             <div id="w-todo" class="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 border border-slate-50 dark:border-slate-800 relative group">
