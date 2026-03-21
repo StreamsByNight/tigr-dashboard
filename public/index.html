@@ -3,32 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TIGR - Launch Pad</title>
+    <title>K12 Launch Pad - Home</title>
     <link rel="icon" type="image/png" href="https://imgur.com/UNZK8ik.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = { darkMode: 'class' }
 
+        // Local storage key for hidden widgets
+        const STORAGE_KEY = 'tigr_hidden_widgets';
+        let hiddenWidgets = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+
         async function fetchCanvasData() {
             try {
-                const response = await fetch('/api/assignments');
+                // Changed to /api/data to support the profile name call
+                const response = await fetch('/api/assignments'); 
                 if (response.status === 401) {
                     document.getElementById('auth-section').classList.remove('hidden');
                     return;
                 }
 
-                const { courses, planner } = await response.json();
+                const data = await response.json();
                 document.getElementById('auth-section').classList.add('hidden');
                 document.getElementById('logout-btn').classList.remove('hidden');
 
-                // 1. Render Courses
+                // 1. Update Name (Attempts to find user name if you updated server.js)
+                if (data.user) {
+                    document.getElementById('user-greeting').innerText = `Hi, ${data.user}! 👋`;
+                }
+
+                // 2. Render Courses
                 const courseContainer = document.getElementById('course-list');
-                courseContainer.innerHTML = courses.map(course => {
+                courseContainer.innerHTML = data.courses.map(course => {
                     const enrollment = course.enrollments?.[0];
                     const score = enrollment?.computed_current_score || 0;
                     const grade = enrollment?.computed_current_grade || 'N/A';
+                    const widgetId = `course-${course.id}`;
+
                     return `
-                        <div class="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col justify-between hover:shadow-xl transition-all">
+                        <div id="${widgetId}" class="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col justify-between hover:shadow-xl transition-all relative group">
+                            <button onclick="removeWidget('${widgetId}')" class="absolute top-4 right-4 opacity-0 group-hover:opacity-100 bg-red-500 text-white w-6 h-6 rounded-full text-xs transition-opacity hover:bg-red-600">×</button>
                             <div>
                                 <div class="flex justify-between items-center mb-4">
                                     <span class="text-[10px] font-bold px-2 py-1 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-600 uppercase">Grade</span>
@@ -43,25 +56,49 @@
                         </div>`;
                 }).join('');
 
-                // 2. Filter Planner items
-                const lessons = planner.filter(p => p.plannable_type !== 'calendar_event');
-                const sessions = planner.filter(p => p.plannable_type === 'calendar_event');
+                // 3. Populate Planner Widgets
+                const lessons = data.planner.filter(p => p.plannable_type !== 'calendar_event');
+                const sessions = data.planner.filter(p => p.plannable_type === 'calendar_event');
 
-                // Populate Lessons Widget
                 document.getElementById('lessons-list').innerHTML = lessons.slice(0, 4).map(item => `
                     <div class="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700">
                         <p class="font-bold truncate text-[11px] text-slate-700 dark:text-slate-200">${item.plannable?.title || item.title}</p>
                         <p class="text-[9px] text-slate-400 uppercase font-black mt-1">Due ${new Date(item.plannable_date || item.due_at).toLocaleDateString()}</p>
                     </div>`).join('');
 
-                // Populate Class Connect Widget
                 document.getElementById('connect-list').innerHTML = sessions.slice(0, 4).map(item => `
                     <div class="p-3 bg-blue-50/50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-blue-900/30">
                         <p class="font-bold text-blue-600 truncate text-[11px]">${item.plannable?.title || item.title}</p>
                         <p class="text-[9px] text-blue-400 uppercase font-black mt-1">${new Date(item.plannable_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
                     </div>`).join('');
 
+                applyWidgetVisibility();
+
             } catch (error) { console.error("Error fetching data:", error); }
+        }
+
+        // --- WIDGET MANAGEMENT ---
+        function removeWidget(id) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.style.display = 'none';
+                if (!hiddenWidgets.includes(id)) {
+                    hiddenWidgets.push(id);
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(hiddenWidgets));
+                }
+            }
+        }
+
+        function resetLayout() {
+            localStorage.removeItem(STORAGE_KEY);
+            window.location.reload();
+        }
+
+        function applyWidgetVisibility() {
+            hiddenWidgets.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = 'none';
+            });
         }
 
         function updateClock() {
@@ -87,6 +124,7 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
         body { font-family: 'Inter', sans-serif; }
+        .group:hover .remove-btn { opacity: 1; }
     </style>
 </head>
 <body class="bg-[#f0f7ff] dark:bg-slate-950 min-h-screen p-6 md:p-10 text-slate-900 dark:text-slate-100 transition-colors duration-500">
@@ -97,6 +135,7 @@
             <h1 class="text-xl font-extrabold hidden md:block tracking-tight text-slate-400">Launch Pad</h1>
         </div>
         <div class="flex items-center gap-4">
+            <button onclick="resetLayout()" class="text-[10px] font-black text-slate-400 hover:text-blue-500 transition-colors uppercase tracking-widest mr-4">Reset Layout</button>
             <button id="logout-btn" onclick="window.location.href='/api/auth/logout'" class="hidden text-[10px] font-black text-slate-400 hover:text-red-500 transition-colors uppercase tracking-widest">Logout</button>
             <button onclick="toggleTheme()" class="p-2.5 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">🌓</button>
         </div>
@@ -104,22 +143,24 @@
 
     <div id="auth-section" class="hidden fixed inset-0 bg-[#f8fbff] dark:bg-slate-950 z-50 flex flex-col items-center justify-center p-6 text-center">
         <img src="https://info-login.k12.com/common/img/k12-logo.svg" class="h-16 mb-8">
-        <h2 class="text-3xl font-black mb-8">Canvas Login Required</h2>
+        <h2 class="text-3xl font-black mb-8">Canvas Login</h2>
         <button onclick="window.location.href='/api/auth/canvas'" class="bg-blue-600 text-white font-bold py-4 px-10 rounded-[1.5rem] shadow-xl shadow-blue-500/20 hover:scale-105 transition-all">Connect Canvas Account</button>
     </div>
 
     <main class="max-w-7xl mx-auto space-y-8">
-        <h2 class="text-3xl md:text-4xl font-black mb-6 tracking-tight">Hi, Student! 👋</h2>
+        <h2 id="user-greeting" class="text-3xl md:text-4xl font-black mb-6 tracking-tight">Hi, Student! 👋</h2>
 
         <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            <div class="lg:col-span-2 bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 shadow-sm border border-slate-50 dark:border-slate-800">
+            <div id="widget-focus" class="lg:col-span-2 bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 shadow-sm border border-slate-50 dark:border-slate-800 relative group">
+                <button onclick="removeWidget('widget-focus')" class="absolute top-6 right-6 opacity-0 group-hover:opacity-100 bg-slate-200 dark:bg-slate-700 w-6 h-6 rounded-full text-xs transition-opacity">×</button>
                 <h3 class="text-lg font-bold mb-6">Today's Focus</h3>
                 <div id="lessons-list" class="space-y-3">
                     <p class="text-slate-400 text-sm animate-pulse">Syncing lessons...</p>
                 </div>
             </div>
 
-            <div class="bg-blue-600 rounded-[2.5rem] p-8 text-white flex flex-col items-center justify-center shadow-2xl">
+            <div id="widget-clock" class="bg-blue-600 rounded-[2.5rem] p-8 text-white flex flex-col items-center justify-center shadow-2xl relative group">
+                <button onclick="removeWidget('widget-clock')" class="absolute top-6 right-6 opacity-0 group-hover:opacity-100 bg-white/20 w-6 h-6 rounded-full text-xs transition-opacity">×</button>
                 <div id="time-greeting" class="text-[10px] uppercase font-black tracking-widest mb-2 opacity-70">GOOD MORNING</div>
                 <div id="clock" class="text-5xl font-black mb-4 tracking-tighter">00:00</div>
                 <div class="bg-white/10 backdrop-blur-xl px-5 py-2 rounded-3xl border border-white/10 text-sm font-bold">
@@ -127,7 +168,8 @@
                 </div>
             </div>
 
-            <div class="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 shadow-sm border border-slate-50 dark:border-slate-800 text-center flex flex-col items-center justify-between">
+            <div id="widget-fox" class="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 shadow-sm border border-slate-50 dark:border-slate-800 text-center flex flex-col items-center justify-between relative group">
+                <button onclick="removeWidget('widget-fox')" class="absolute top-6 right-6 opacity-0 group-hover:opacity-100 bg-slate-200 dark:bg-slate-700 w-6 h-6 rounded-full text-xs transition-opacity">×</button>
                 <span class="text-[10px] font-black text-blue-500 uppercase tracking-widest">Upcoming</span>
                 <div class="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 rounded-3xl flex items-center justify-center text-4xl my-4">🦊</div>
                 <p class="font-bold text-sm">Live Class Connect</p>
@@ -136,7 +178,8 @@
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div class="bg-white dark:bg-slate-900 rounded-[2rem] p-6 shadow-sm border border-slate-50 dark:border-slate-800">
+            <div id="widget-connect" class="bg-white dark:bg-slate-900 rounded-[2rem] p-6 shadow-sm border border-slate-50 dark:border-slate-800 relative group">
+                <button onclick="removeWidget('widget-connect')" class="absolute top-4 right-4 opacity-0 group-hover:opacity-100 bg-slate-200 dark:bg-slate-700 w-5 h-5 rounded-full text-[10px] transition-opacity">×</button>
                 <h4 class="font-bold text-sm mb-4">Class Connect</h4>
                 <div id="connect-list" class="space-y-2">
                     <p class="text-slate-400 text-sm animate-pulse">Syncing sessions...</p>
@@ -154,12 +197,14 @@
                 </a>
             </div>
 
-            <div class="bg-white dark:bg-slate-900 p-6 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 flex flex-col items-center justify-center text-center">
+            <div id="widget-library" class="bg-white dark:bg-slate-900 p-6 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 flex flex-col items-center justify-center text-center relative group">
+                <button onclick="removeWidget('widget-library')" class="absolute top-4 right-4 opacity-0 group-hover:opacity-100 bg-slate-200 dark:bg-slate-700 w-5 h-5 rounded-full text-[10px] transition-opacity">×</button>
                 <div class="text-blue-600 font-black text-xl mb-1">K12 Library</div>
                 <div class="w-8 h-1 bg-blue-600 rounded-full"></div>
             </div>
 
-            <div class="bg-[#1e4a47] p-6 rounded-[2.5rem] flex flex-col items-center justify-center text-center text-white">
+            <div id="widget-zone-green" class="bg-[#1e4a47] p-6 rounded-[2.5rem] flex flex-col items-center justify-center text-center text-white relative group">
+                <button onclick="removeWidget('widget-zone-green')" class="absolute top-4 right-4 opacity-0 group-hover:opacity-100 bg-white/20 w-5 h-5 rounded-full text-[10px] transition-opacity">×</button>
                 <div class="font-black text-xl mb-1 tracking-tighter">K12 ZONE</div>
                 <div class="w-8 h-1 bg-yellow-400 rounded-full"></div>
             </div>
