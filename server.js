@@ -10,7 +10,7 @@ const CLIENT_ID = process.env.CLIENT_ID || "10000000000004";
 const CLIENT_SECRET = process.env.CLIENT_SECRET || "UXF6XMuf8mEPRwyUC6kfBHxPxKtc4yH96wrtvcfG6CMFUDLVtAMR893yGxKK62m2";
 
 // This logic ensures localhost is used unless Render tells it otherwise
-const REDIRECT_URI = process.env.REDIRECT_URI || "http://localhost:3000/api/auth/callback";
+const REDIRECT_URI = process.env.REDIRECT_URI || "https://tigr-dashboard.onrender.com/api/auth/callback";
 const PORT = process.env.PORT || 3000;
 
 app.use(session({
