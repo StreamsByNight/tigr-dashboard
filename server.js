@@ -9,16 +9,22 @@ const CANVAS_URL = process.env.CANVAS_URL || "https://stridek12learning.org";
 const CLIENT_ID = process.env.CLIENT_ID || "10000000000004";
 const CLIENT_SECRET = process.env.CLIENT_SECRET || "UXF6XMuf8mEPRwyUC6kfBHxPxKtc4yH96wrtvcfG6CMFUDLVtAMR893yGxKK62m2";
 
-// This picks Render's URL first, then falls back to your custom string, then localhost
-const REDIRECT_URI = process.env.REDIRECT_URI || "https://tigr-dashboard.onrender.com/api/auth/callback";
+// FIX: This now ensures the path is ALWAYS included
+const BASE_URL = process.env.REDIRECT_URI || "https://tigr-dashboard.onrender.com";
+const REDIRECT_URI = BASE_URL.endsWith('/api/auth/callback') 
+    ? BASE_URL 
+    : `${BASE_URL.replace(/\/$/, "")}/api/auth/callback`;
+
 const PORT = process.env.PORT || 3000;
 
 app.use(session({
     secret: 'tigr-secret-key-12345',
     resave: false,
     saveUninitialized: true,
-    // Automatically sets 'secure' to true only if we are on Render
-    cookie: { secure: process.env.NODE_ENV === 'production' } 
+    cookie: { 
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax' // Helps with cross-domain redirects from Canvas
+    } 
 }));
 
 app.use(express.static('public')); 
@@ -28,7 +34,8 @@ app.get('/api/auth/canvas', (req, res) => {
     const encodedRedirect = encodeURIComponent(REDIRECT_URI);
     const authUrl = `${CANVAS_URL}/login/oauth2/auth?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodedRedirect}`;
     
-    console.log("Sending user to Canvas. Expected return to:", REDIRECT_URI);
+    console.log("--- LOGIN ATTEMPT ---");
+    console.log("Sending to Canvas with URI:", REDIRECT_URI);
     res.redirect(authUrl);
 });
 
@@ -51,7 +58,7 @@ app.get('/api/auth/callback', async (req, res) => {
         res.redirect('/'); 
     } catch (error) {
         console.error("Auth Error details:", error.response?.data || error.message);
-        res.status(500).send("Authentication Failed. Check your terminal for the error details.");
+        res.status(500).send("Authentication Failed. Ensure your Developer Key settings in Canvas match the URI in the terminal.");
     }
 });
 
