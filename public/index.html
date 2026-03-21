@@ -7,15 +7,25 @@
     <link rel="icon" type="image/png" href="https://imgur.com/UNZK8ik.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        tailwind.config = { darkMode: 'class' }
+        tailwind.config = { 
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        'k12-blue': '#0033cc',
+                        'k12-bg': '#f0f7ff',
+                    }
+                }
+            }
+        }
 
-        // Local storage key for hidden widgets
         const STORAGE_KEY = 'tigr_hidden_widgets';
         let hiddenWidgets = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+        let isEditMode = false;
 
+        // --- CORE DATA FETCHING ---
         async function fetchCanvasData() {
             try {
-                // Changed to /api/data to support the profile name call
                 const response = await fetch('/api/assignments'); 
                 if (response.status === 401) {
                     document.getElementById('auth-section').classList.remove('hidden');
@@ -26,12 +36,11 @@
                 document.getElementById('auth-section').classList.add('hidden');
                 document.getElementById('logout-btn').classList.remove('hidden');
 
-                // 1. Update Name (Attempts to find user name if you updated server.js)
                 if (data.user) {
-                    document.getElementById('user-greeting').innerText = `Hi, ${data.user}! 👋`;
+                    document.getElementById('user-greeting').innerText = `Hi ${data.user} Gradebook!`;
                 }
 
-                // 2. Render Courses
+                // Render Courses with Calculator Trigger
                 const courseContainer = document.getElementById('course-list');
                 courseContainer.innerHTML = data.courses.map(course => {
                     const enrollment = course.enrollments?.[0];
@@ -40,181 +49,171 @@
                     const widgetId = `course-${course.id}`;
 
                     return `
-                        <div id="${widgetId}" class="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col justify-between hover:shadow-xl transition-all relative group">
-                            <button onclick="removeWidget('${widgetId}')" class="absolute top-4 right-4 opacity-0 group-hover:opacity-100 bg-red-500 text-white w-6 h-6 rounded-full text-xs transition-opacity hover:bg-red-600">×</button>
+                        <div id="${widgetId}" class="min-w-[280px] bg-white dark:bg-slate-900 p-6 rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col justify-between hover:shadow-md transition-all relative group">
+                            <button onclick="removeWidget('${widgetId}')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-slate-400 text-white w-6 h-1.5 rounded-full transition-opacity"></button>
                             <div>
                                 <div class="flex justify-between items-center mb-4">
-                                    <span class="text-[10px] font-bold px-2 py-1 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-600 uppercase">Grade</span>
-                                    <span class="text-xl font-black ${score < 70 ? 'text-red-500' : 'text-blue-600'}">${grade}</span>
+                                    <span class="text-[10px] font-bold px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 uppercase tracking-tighter">Semester 2</span>
+                                    <div class="flex items-center gap-1 cursor-pointer group/calc" onclick="openCalculator('${course.name}', ${score})">
+                                         <span class="text-[10px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full uppercase group-hover/calc:bg-blue-600 group-hover/calc:text-white transition-colors">Calc</span>
+                                         <span class="text-lg font-black text-slate-700 dark:text-white">${grade}</span>
+                                    </div>
                                 </div>
-                                <h3 class="font-bold text-slate-800 dark:text-white text-sm mb-1 h-10 overflow-hidden">${course.name}</h3>
-                                <div class="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full mt-5">
-                                    <div class="bg-blue-500 h-full rounded-full" style="width: ${score}%"></div>
+                                <h3 class="font-black text-slate-800 dark:text-white text-sm mb-4 h-10 overflow-hidden leading-tight">${course.name}</h3>
+                                <div class="bg-sky-100 dark:bg-sky-900/30 rounded-3xl h-32 flex items-center justify-center mb-4 overflow-hidden">
+                                    <span class="text-4xl">📚</span>
                                 </div>
                             </div>
-                            <a href="https://stridek12learning.org/courses/${course.id}" target="_blank" class="mt-6 w-full py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl text-xs font-bold text-center border border-transparent hover:border-blue-200 transition-all">Start Course</a>
+                            <a href="https://stridek12learning.org/courses/${course.id}" target="_blank" class="w-full py-2.5 border-2 border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400 rounded-full text-[11px] font-black text-center hover:bg-blue-600 hover:text-white transition-all">➜ Start Course</a>
                         </div>`;
                 }).join('');
 
-                // 3. Populate Planner Widgets
-                const lessons = data.planner.filter(p => p.plannable_type !== 'calendar_event');
-                const sessions = data.planner.filter(p => p.plannable_type === 'calendar_event');
-
-                document.getElementById('lessons-list').innerHTML = lessons.slice(0, 4).map(item => `
-                    <div class="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700">
-                        <p class="font-bold truncate text-[11px] text-slate-700 dark:text-slate-200">${item.plannable?.title || item.title}</p>
-                        <p class="text-[9px] text-slate-400 uppercase font-black mt-1">Due ${new Date(item.plannable_date || item.due_at).toLocaleDateString()}</p>
-                    </div>`).join('');
-
-                document.getElementById('connect-list').innerHTML = sessions.slice(0, 4).map(item => `
-                    <div class="p-3 bg-blue-50/50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-blue-900/30">
-                        <p class="font-bold text-blue-600 truncate text-[11px]">${item.plannable?.title || item.title}</p>
-                        <p class="text-[9px] text-blue-400 uppercase font-black mt-1">${new Date(item.plannable_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                // Populate Lists
+                const plannerItems = data.planner || [];
+                const lessons = plannerItems.filter(p => p.plannable_type !== 'calendar_event');
+                document.getElementById('lessons-list').innerHTML = lessons.slice(0, 3).map(item => `
+                    <div class="p-3 bg-sky-50 dark:bg-slate-800 rounded-2xl flex justify-between items-center border border-sky-100 dark:border-slate-700">
+                        <div class="truncate">
+                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">${item.context_name || 'Class'}</p>
+                            <p class="font-bold text-slate-800 dark:text-slate-200 text-xs truncate">${item.plannable?.title || item.title}</p>
+                        </div>
+                        <span class="text-blue-600 font-bold ml-2">❯</span>
                     </div>`).join('');
 
                 applyWidgetVisibility();
-
-            } catch (error) { console.error("Error fetching data:", error); }
+            } catch (error) { console.error("Error:", error); }
         }
 
-        // --- WIDGET MANAGEMENT ---
+        // --- GRADE CALCULATOR ---
+        function openCalculator(name, current) {
+            document.getElementById('calc-modal').classList.replace('hidden', 'flex');
+            document.getElementById('calc-course-name').innerText = name;
+            document.getElementById('current-val').innerText = current;
+            runCalc();
+        }
+
+        function runCalc() {
+            const current = parseFloat(document.getElementById('current-val').innerText);
+            const goal = parseFloat(document.getElementById('grade-goal').value);
+            const weight = parseFloat(document.getElementById('exam-weight').value) / 100;
+            const needed = (goal - (current * (1 - weight))) / weight;
+            
+            const res = document.getElementById('calc-result');
+            if(needed > 100) res.innerHTML = `<span class="text-red-500">Impossible! You need ${needed.toFixed(1)}%</span>`;
+            else res.innerHTML = `You need <span class="text-blue-600 font-black">${Math.max(0, needed).toFixed(1)}%</span> to hit your goal.`;
+        }
+
+        // --- UTILITIES ---
+        function toggleEdit() {
+            isEditMode = !isEditMode;
+            document.getElementById('edit-btn').innerText = isEditMode ? 'Done' : '✎ Edit';
+            document.querySelectorAll('.remove-handle').forEach(h => h.classList.toggle('hidden', !isEditMode));
+        }
+
         function removeWidget(id) {
-            const el = document.getElementById(id);
-            if (el) {
-                el.style.display = 'none';
-                if (!hiddenWidgets.includes(id)) {
-                    hiddenWidgets.push(id);
-                    localStorage.setItem(STORAGE_KEY, JSON.stringify(hiddenWidgets));
-                }
-            }
-        }
-
-        function resetLayout() {
-            localStorage.removeItem(STORAGE_KEY);
-            window.location.reload();
+            document.getElementById(id).classList.add('hidden');
+            hiddenWidgets.push(id);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(hiddenWidgets));
         }
 
         function applyWidgetVisibility() {
-            hiddenWidgets.forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.style.display = 'none';
-            });
+            hiddenWidgets.forEach(id => { if(document.getElementById(id)) document.getElementById(id).classList.add('hidden'); });
         }
 
         function updateClock() {
             const now = new Date();
             document.getElementById('clock').innerText = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            const hours = now.getHours();
-            document.getElementById('time-greeting').innerText = hours < 12 ? "Good Morning" : hours < 18 ? "Good Afternoon" : "Good Evening";
+        }
+
+        // AUTO DARK MODE (Checks System Settings)
+        function initTheme() {
+            if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                document.getElementById('app-html').classList.add('dark');
+            }
         }
 
         window.onload = () => {
-            if (localStorage.getItem('theme') === 'dark') document.getElementById('app-html').classList.add('dark');
+            initTheme();
             setInterval(updateClock, 1000);
             updateClock();
             fetchCanvasData();
         };
-
-        function toggleTheme() {
-            const html = document.getElementById('app-html');
-            html.classList.toggle('dark');
-            localStorage.setItem('theme', html.classList.contains('dark') ? 'dark' : 'light');
-        }
     </script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
-        body { font-family: 'Inter', sans-serif; }
-        .group:hover .remove-btn { opacity: 1; }
+        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&display=swap');
+        body { font-family: 'Nunito', sans-serif; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
     </style>
 </head>
-<body class="bg-[#f0f7ff] dark:bg-slate-950 min-h-screen p-6 md:p-10 text-slate-900 dark:text-slate-100 transition-colors duration-500">
+<body class="bg-[#f0f7ff] dark:bg-slate-950 min-h-screen p-4 md:p-8">
 
-    <header class="max-w-7xl mx-auto flex justify-between items-center mb-10">
-        <div class="flex items-center gap-4">
-            <img src="https://info-login.k12.com/common/img/k12-logo.svg" alt="K12" class="h-10">
-            <h1 class="text-xl font-extrabold hidden md:block tracking-tight text-slate-400">Launch Pad</h1>
-        </div>
-        <div class="flex items-center gap-4">
-            <button onclick="resetLayout()" class="text-[10px] font-black text-slate-400 hover:text-blue-500 transition-colors uppercase tracking-widest mr-4">Reset Layout</button>
-            <button id="logout-btn" onclick="window.location.href='/api/auth/logout'" class="hidden text-[10px] font-black text-slate-400 hover:text-red-500 transition-colors uppercase tracking-widest">Logout</button>
-            <button onclick="toggleTheme()" class="p-2.5 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">🌓</button>
+    <header class="max-w-7xl mx-auto flex justify-between items-center mb-8">
+        <div class="bg-white dark:bg-slate-900 px-4 py-1 rounded-full shadow-sm border border-slate-200 dark:border-slate-800 text-[10px] font-black text-blue-600 uppercase">Test</div>
+        <div class="flex items-center gap-6">
+            <button onclick="localStorage.removeItem('tigr_hidden_widgets'); location.reload();" class="text-[10px] font-black text-slate-400 uppercase">Reset</button>
+            <button id="logout-btn" onclick="window.location.href='/api/auth/logout'" class="hidden text-[10px] font-black text-slate-400 uppercase">Logout</button>
         </div>
     </header>
 
-    <div id="auth-section" class="hidden fixed inset-0 bg-[#f8fbff] dark:bg-slate-950 z-50 flex flex-col items-center justify-center p-6 text-center">
-        <img src="https://info-login.k12.com/common/img/k12-logo.svg" class="h-16 mb-8">
-        <h2 class="text-3xl font-black mb-8">Canvas Login</h2>
-        <button onclick="window.location.href='/api/auth/canvas'" class="bg-blue-600 text-white font-bold py-4 px-10 rounded-[1.5rem] shadow-xl shadow-blue-500/20 hover:scale-105 transition-all">Connect Canvas Account</button>
+    <main class="max-w-7xl mx-auto">
+        <div class="flex justify-between items-center mb-8">
+            <h2 id="user-greeting" class="text-4xl font-black text-slate-900 dark:text-white">Hi Coco Gradebook!</h2>
+            <button id="edit-btn" onclick="toggleEdit()" class="bg-white dark:bg-slate-900 px-6 py-2 rounded-full border border-slate-200 dark:border-slate-800 shadow-sm text-sm font-bold text-blue-600">✎ Edit</button>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
+            <div id="w-focus" class="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 shadow-sm border border-slate-50 dark:border-slate-800 relative group">
+                <button onclick="removeWidget('w-focus')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-slate-400 w-6 h-1.5 rounded-full"></button>
+                <h3 class="text-xl font-black mb-6 dark:text-white">Today's Focus</h3>
+                <div id="lessons-list" class="space-y-4"></div>
+            </div>
+
+            <div id="w-clock" class="bg-sky-400 rounded-[2.5rem] p-8 text-white flex flex-col items-center justify-center shadow-lg relative overflow-hidden group">
+                <button onclick="removeWidget('w-clock')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-white/40 w-6 h-1.5 rounded-full"></button>
+                <div id="time-greeting" class="text-[11px] font-black tracking-widest mb-2 opacity-90 uppercase tracking-widest">GOOD AFTERNOON</div>
+                <div id="clock" class="text-6xl font-black mb-2 tracking-tighter">00:00</div>
+                <div class="bg-white/20 backdrop-blur-md px-6 py-2 rounded-full border border-white/20 text-lg font-black mt-4">☀️ SUNNY 21°</div>
+                <div class="absolute bottom-0 translate-y-4"><span class="text-4xl">☀️</span></div>
+            </div>
+
+            <div id="w-fox" class="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 shadow-sm border border-slate-50 dark:border-slate-800 text-center flex flex-col items-center relative group">
+                <button onclick="removeWidget('w-fox')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-slate-400 w-6 h-1.5 rounded-full"></button>
+                <div class="w-full bg-yellow-50 dark:bg-yellow-900/10 rounded-[2rem] h-40 flex items-center justify-center mb-6"><span class="text-6xl">🦊</span></div>
+                <button class="w-full bg-blue-600 text-white text-sm font-black py-4 rounded-full shadow-lg">➜ VIEW RECORDING</button>
+            </div>
+        </div>
+
+        <section>
+            <h3 class="text-2xl font-black mb-8 dark:text-white">Your Courses</h3>
+            <div id="course-list" class="flex gap-6 overflow-x-auto pb-10 no-scrollbar"></div>
+        </section>
+    </main>
+
+    <div id="calc-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] items-center justify-center p-4">
+        <div class="bg-white dark:bg-slate-900 w-full max-w-md rounded-[3rem] p-8 shadow-2xl">
+            <h3 id="calc-course-name" class="font-black text-xl mb-2">Course Name</h3>
+            <p class="text-slate-500 text-xs mb-6 uppercase font-bold">Current Score: <span id="current-val">0</span>%</p>
+            
+            <div class="space-y-6">
+                <div>
+                    <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">Target Grade (%)</label>
+                    <input type="number" id="grade-goal" value="90" oninput="runCalc()" class="w-full bg-slate-100 dark:bg-slate-800 rounded-2xl p-4 font-black text-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">Weight of remaining work (%)</label>
+                    <input type="range" id="exam-weight" min="5" max="95" value="30" oninput="runCalc()" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600">
+                </div>
+                <div id="calc-result" class="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-3xl text-center text-sm font-bold text-slate-700 dark:text-slate-200"></div>
+            </div>
+            <button onclick="document.getElementById('calc-modal').classList.replace('flex', 'hidden')" class="w-full mt-8 bg-slate-900 text-white py-4 rounded-full font-black text-sm">Close</button>
+        </div>
     </div>
 
-    <main class="max-w-7xl mx-auto space-y-8">
-        <h2 id="user-greeting" class="text-3xl md:text-4xl font-black mb-6 tracking-tight">Hi, Student! 👋</h2>
+    <div id="auth-section" class="hidden fixed inset-0 bg-white dark:bg-slate-950 z-[200] flex flex-col items-center justify-center p-6 text-center">
+        <img src="https://info-login.k12.com/common/img/k12-logo.svg" class="h-16 mb-8">
+        <h2 class="text-3xl font-black mb-8">Canvas Login Required</h2>
+        <button onclick="window.location.href='/api/auth/canvas'" class="bg-blue-600 text-white font-black py-4 px-12 rounded-full shadow-xl">Connect Canvas</button>
+    </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            <div id="widget-focus" class="lg:col-span-2 bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 shadow-sm border border-slate-50 dark:border-slate-800 relative group">
-                <button onclick="removeWidget('widget-focus')" class="absolute top-6 right-6 opacity-0 group-hover:opacity-100 bg-slate-200 dark:bg-slate-700 w-6 h-6 rounded-full text-xs transition-opacity">×</button>
-                <h3 class="text-lg font-bold mb-6">Today's Focus</h3>
-                <div id="lessons-list" class="space-y-3">
-                    <p class="text-slate-400 text-sm animate-pulse">Syncing lessons...</p>
-                </div>
-            </div>
-
-            <div id="widget-clock" class="bg-blue-600 rounded-[2.5rem] p-8 text-white flex flex-col items-center justify-center shadow-2xl relative group">
-                <button onclick="removeWidget('widget-clock')" class="absolute top-6 right-6 opacity-0 group-hover:opacity-100 bg-white/20 w-6 h-6 rounded-full text-xs transition-opacity">×</button>
-                <div id="time-greeting" class="text-[10px] uppercase font-black tracking-widest mb-2 opacity-70">GOOD MORNING</div>
-                <div id="clock" class="text-5xl font-black mb-4 tracking-tighter">00:00</div>
-                <div class="bg-white/10 backdrop-blur-xl px-5 py-2 rounded-3xl border border-white/10 text-sm font-bold">
-                    ☀️ Sunny
-                </div>
-            </div>
-
-            <div id="widget-fox" class="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 shadow-sm border border-slate-50 dark:border-slate-800 text-center flex flex-col items-center justify-between relative group">
-                <button onclick="removeWidget('widget-fox')" class="absolute top-6 right-6 opacity-0 group-hover:opacity-100 bg-slate-200 dark:bg-slate-700 w-6 h-6 rounded-full text-xs transition-opacity">×</button>
-                <span class="text-[10px] font-black text-blue-500 uppercase tracking-widest">Upcoming</span>
-                <div class="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 rounded-3xl flex items-center justify-center text-4xl my-4">🦊</div>
-                <p class="font-bold text-sm">Live Class Connect</p>
-                <button class="mt-4 w-full bg-blue-600 text-white text-[10px] font-black py-3 rounded-2xl">VIEW RECORDING</button>
-            </div>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div id="widget-connect" class="bg-white dark:bg-slate-900 rounded-[2rem] p-6 shadow-sm border border-slate-50 dark:border-slate-800 relative group">
-                <button onclick="removeWidget('widget-connect')" class="absolute top-4 right-4 opacity-0 group-hover:opacity-100 bg-slate-200 dark:bg-slate-700 w-5 h-5 rounded-full text-[10px] transition-opacity">×</button>
-                <h4 class="font-bold text-sm mb-4">Class Connect</h4>
-                <div id="connect-list" class="space-y-2">
-                    <p class="text-slate-400 text-sm animate-pulse">Syncing sessions...</p>
-                </div>
-            </div>
-            
-            <div class="flex flex-col gap-4">
-                <a href="https://www.stridelogin.com/login/" target="_blank" class="bg-white dark:bg-slate-900 p-5 rounded-3xl flex items-center gap-4 border border-slate-50 dark:border-slate-800 hover:shadow-lg transition-all">
-                    <div class="w-10 h-10 bg-blue-50 dark:bg-blue-900/30 rounded-2xl flex items-center justify-center text-xl">🎮</div>
-                    <span class="font-black text-[10px] uppercase tracking-wider text-slate-500">Skills Arcade</span>
-                </a>
-                <a href="https://security-gateway.k12.com/security-gateway/sso-gateway-v2?urlID=TOPIA" target="_blank" class="bg-white dark:bg-slate-900 p-5 rounded-3xl flex items-center gap-4 border border-slate-50 dark:border-slate-800 hover:shadow-lg transition-all">
-                    <div class="w-10 h-10 bg-emerald-50 dark:bg-emerald-900/30 rounded-2xl flex items-center justify-center text-xl">🌐</div>
-                    <span class="font-black text-[10px] uppercase tracking-wider text-slate-500">K12 Zone</span>
-                </a>
-            </div>
-
-            <div id="widget-library" class="bg-white dark:bg-slate-900 p-6 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 flex flex-col items-center justify-center text-center relative group">
-                <button onclick="removeWidget('widget-library')" class="absolute top-4 right-4 opacity-0 group-hover:opacity-100 bg-slate-200 dark:bg-slate-700 w-5 h-5 rounded-full text-[10px] transition-opacity">×</button>
-                <div class="text-blue-600 font-black text-xl mb-1">K12 Library</div>
-                <div class="w-8 h-1 bg-blue-600 rounded-full"></div>
-            </div>
-
-            <div id="widget-zone-green" class="bg-[#1e4a47] p-6 rounded-[2.5rem] flex flex-col items-center justify-center text-center text-white relative group">
-                <button onclick="removeWidget('widget-zone-green')" class="absolute top-4 right-4 opacity-0 group-hover:opacity-100 bg-white/20 w-5 h-5 rounded-full text-[10px] transition-opacity">×</button>
-                <div class="font-black text-xl mb-1 tracking-tighter">K12 ZONE</div>
-                <div class="w-8 h-1 bg-yellow-400 rounded-full"></div>
-            </div>
-        </div>
-
-        <h3 class="text-2xl font-black mb-6">Your Courses</h3>
-        <div id="course-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 pb-10">
-            <div class="h-64 bg-slate-100 dark:bg-slate-900 rounded-[2.5rem] animate-pulse"></div>
-            <div class="h-64 bg-slate-100 dark:bg-slate-900 rounded-[2.5rem] animate-pulse"></div>
-        </div>
-    </main>
 </body>
 </html>
