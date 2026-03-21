@@ -9,7 +9,7 @@ const CANVAS_URL = process.env.CANVAS_URL || "https://stridek12learning.org";
 const CLIENT_ID = process.env.CLIENT_ID || "10000000000004";
 const CLIENT_SECRET = process.env.CLIENT_SECRET || "UXF6XMuf8mEPRwyUC6kfBHxPxKtc4yH96wrtvcfG6CMFUDLVtAMR893yGxKK62m2";
 
-// This logic ensures localhost is used unless Render tells it otherwise
+// This picks Render's URL first, then falls back to your custom string, then localhost
 const REDIRECT_URI = process.env.REDIRECT_URI || "https://tigr-dashboard.onrender.com/api/auth/callback";
 const PORT = process.env.PORT || 3000;
 
@@ -17,15 +17,14 @@ app.use(session({
     secret: 'tigr-secret-key-12345',
     resave: false,
     saveUninitialized: true,
-    // Change to 'true' only when you are live on Render (HTTPS)
-    cookie: { secure: false } 
+    // Automatically sets 'secure' to true only if we are on Render
+    cookie: { secure: process.env.NODE_ENV === 'production' } 
 }));
 
 app.use(express.static('public')); 
 
 // 1. Start Login
 app.get('/api/auth/canvas', (req, res) => {
-    // We encode this to ensure the special characters in the URL don't break the link
     const encodedRedirect = encodeURIComponent(REDIRECT_URI);
     const authUrl = `${CANVAS_URL}/login/oauth2/auth?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodedRedirect}`;
     
@@ -43,7 +42,7 @@ app.get('/api/auth/callback', async (req, res) => {
             grant_type: 'authorization_code',
             client_id: CLIENT_ID,
             client_secret: CLIENT_SECRET,
-            redirect_uri: REDIRECT_URI, // Must match the one sent in step 1 exactly
+            redirect_uri: REDIRECT_URI,
             code: code
         });
         
@@ -85,6 +84,6 @@ app.get('/api/auth/logout', (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`--- TIGR DASHBOARD STARTING ---`);
-    console.log(`Local URL: http://localhost:${PORT}`);
+    console.log(`Listening on Port: ${PORT}`);
     console.log(`Redirecting Canvas back to: ${REDIRECT_URI}`);
 });
