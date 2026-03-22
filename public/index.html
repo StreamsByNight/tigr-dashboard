@@ -22,6 +22,7 @@
         const MUTE_KEY = 'tigr_muted';
         const THEME_KEY = 'tigr_dark_mode';
         const AUTH_KEY = 'canvas_authorized';
+        const LAST_AUTH_ATTEMPT = 'last_auth_attempt';
         
         let hiddenWidgets = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
         let todos = JSON.parse(localStorage.getItem(TODO_KEY) || "[]");
@@ -68,20 +69,25 @@
                 const response = await fetch('/api/assignments'); 
                 
                 if (response.status === 401) {
+                    console.log("Unauthorized: Clearing local auth state.");
                     localStorage.setItem(AUTH_KEY, 'false');
-                    document.getElementById('auth-section').classList.remove('hidden');
+                    
+                    // LOOP PROTECTION: Only show auth screen if we didn't just try to login in the last 5 seconds
+                    const lastAttempt = localStorage.getItem(LAST_AUTH_ATTEMPT) || 0;
+                    if (Date.now() - lastAttempt > 5000) {
+                        document.getElementById('auth-section').classList.remove('hidden');
+                    }
                     return;
                 }
                 
                 const data = await response.json();
                 localStorage.setItem(AUTH_KEY, 'true');
+                localStorage.removeItem(LAST_AUTH_ATTEMPT); // Clear attempt on success
                 document.getElementById('auth-section').classList.add('hidden');
                 
                 if (data.user) {
                     const hour = new Date().getHours();
                     let greeting = hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening";
-                    
-                    // Removes "Gradebook" from user name
                     const cleanName = data.user.replace(/Gradebook/gi, '').trim();
                     document.getElementById('user-greeting').innerText = `${greeting}, ${cleanName}!`;
                 }
@@ -90,7 +96,7 @@
                 renderCalendar(calendarEvents);
 
                 const courseContainer = document.getElementById('course-list');
-                courseContainer.innerHTML = data.courses.map(course => {
+                courseContainer.innerHTML = (data.courses || []).map(course => {
                     const score = course.enrollments?.[0]?.computed_current_score || 0;
                     const grade = course.enrollments?.[0]?.computed_current_grade || 'N/A';
                     return `
@@ -125,6 +131,11 @@
             }
         }
 
+        function handleAuthorize() {
+            localStorage.setItem(LAST_AUTH_ATTEMPT, Date.now().toString());
+            window.location.href = '/api/auth/canvas';
+        }
+
         function signOut() {
             if(confirm("Are you sure you want to sign out?")) {
                 localStorage.setItem(AUTH_KEY, 'false');
@@ -134,7 +145,7 @@
 
         function renderCalendar(events) {
             const calContent = document.getElementById('calendar-content');
-            if (events.length === 0) {
+            if (!events || events.length === 0) {
                 calContent.innerHTML = `<p class="text-[10px] font-bold text-slate-400 text-center uppercase py-4">No events scheduled</p>`;
                 return;
             }
@@ -197,7 +208,7 @@
 
         function updateMuteUI() {
             const btn = document.getElementById('mute-btn');
-            btn.innerHTML = isMuted ? '🔇 Muted' : '🔔 Alerts';
+            btn.innerHTML = isMuted ? '                🔇 Muted' : '🔔 Alerts';
             btn.classList.toggle('opacity-50', isMuted);
         }
 
@@ -273,16 +284,19 @@
             updateMuteUI();
             updateWeather();
             
-            // Persistent Login Logic
+            // Loop Protection check on load
+            const lastAttempt = localStorage.getItem(LAST_AUTH_ATTEMPT) || 0;
+            const cooldownActive = (Date.now() - lastAttempt < 5000);
+
             if (isAuthorized) {
                 fetchCanvasData();
-            } else {
+            } else if (!cooldownActive) {
                 document.getElementById('auth-section').classList.remove('hidden');
             }
 
             setInterval(updateClock, 1000);
             setInterval(updateWeather, 1800000);
-            setInterval(fetchCanvasData, 300000); 
+            setInterval(() => { if(isAuthorized) fetchCanvasData(); }, 300000); 
         };
     </script>
     <style>
@@ -310,7 +324,7 @@
 
     <main class="max-w-7xl mx-auto w-full flex-grow">
         <div class="flex justify-between items-center mb-8">
-            <h2 id="user-greeting" class="text-4xl font-black text-slate-900 dark:text-white tracking-tight">Hi Coco!</h2>
+            <h2 id="user-greeting" class="text-4xl font-black text-slate-900 dark:text-white tracking-tight">Hi There!</h2>
             <button id="edit-btn" onclick="toggleEdit()" class="bg-white dark:bg-slate-900 px-6 py-2 rounded-full border border-slate-200 dark:border-slate-800 shadow-sm text-sm font-bold text-blue-600 hover:scale-105 transition-all">✎ Edit</button>
         </div>
 
@@ -413,7 +427,9 @@
 
     <div id="auth-section" class="hidden fixed inset-0 bg-white dark:bg-slate-950 z-[400] flex flex-col items-center justify-center p-6 text-center">
         <img src="https://info-login.k12.com/common/img/k12-logo.svg" class="h-16 mb-8">
-        <button onclick="window.location.href='/api/auth/canvas'" class="bg-blue-600 text-white font-black py-5 px-16 rounded-full shadow-2xl uppercase tracking-widest">Connect Canvas</button>
+        <button onclick="handleAuthorize()" class="bg-blue-600 text-white font-black py-5 px-16 rounded-full shadow-2xl uppercase tracking-widest hover:scale-105 transition-transform">
+            Connect Canvas
+        </button>
     </div>
 
 </body>
