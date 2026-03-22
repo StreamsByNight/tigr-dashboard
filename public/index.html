@@ -71,7 +71,17 @@
                 const data = await response.json();
                 document.getElementById('auth-section').classList.add('hidden');
                 
-                if (data.user) document.getElementById('user-greeting').innerText = `Hi ${data.user} Gradebook!`;
+                if (data.user) {
+                    const hour = new Date().getHours();
+                    let greeting = "Hi";
+                    if (hour < 12) greeting = "Good Morning";
+                    else if (hour < 18) greeting = "Good Afternoon";
+                    else greeting = "Good Evening";
+                    
+                    // Removes "Gradebook" if it's part of the name string
+                    const cleanName = data.user.replace(/Gradebook/gi, '').trim();
+                    document.getElementById('user-greeting').innerText = `${greeting}, ${cleanName}!`;
+                }
 
                 const calendarEvents = (data.planner || []).filter(p => p.plannable_type === 'calendar_event' || p.plannable_type === 'assignment');
                 renderCalendar(calendarEvents);
@@ -278,7 +288,7 @@
 
     <main class="max-w-7xl mx-auto w-full flex-grow">
         <div class="flex justify-between items-center mb-8">
-            <h2 id="user-greeting" class="text-4xl font-black text-slate-900 dark:text-white tracking-tight">Hi Coco Gradebook!</h2>
+            <h2 id="user-greeting" class="text-4xl font-black text-slate-900 dark:text-white tracking-tight">Hi Coco!</h2>
             <button id="edit-btn" onclick="toggleEdit()" class="bg-white dark:bg-slate-900 px-6 py-2 rounded-full border border-slate-200 dark:border-slate-800 shadow-sm text-sm font-bold text-blue-600 hover:scale-105 transition-all">✎ Edit</button>
         </div>
 
